@@ -1,6 +1,7 @@
 import asyncio
 import aiohttp
 import bs4
+import os
 import tqdm
 
  
@@ -11,8 +12,8 @@ def get(*args, **kwargs):
 
 
 @asyncio.coroutine
-def wait_with_progress(coros, total):
-    for f in tqdm.tqdm(asyncio.as_completed(coros), total):
+def wait_with_progress(coros):
+    for f in tqdm.tqdm(asyncio.as_completed(coros), total=len(coros)):
         yield from f
 
 
@@ -25,15 +26,20 @@ def img_urls(page):
 
 
 @asyncio.coroutine
-def print_image_data(url, sem, output_folder='crawled_data'):
+def save_image_data(url, sem, output_folder='crawled_data/'):
     with (yield from sem):
         page = yield from get(url)
 
+    destination = output_folder + url.split('//')[1].split('.')[0]
+    try:
+        os.mkdir(destination)
+    except FileExistsError:
+        pass
+
     for img_url in img_urls(page):
-        print(img_url)
         name = img_url.split('/')[-1]
         img = yield from get(img_url)
-        f = open(output_folder+'/'+name, 'wb')
+        f = open(destination+'/'+name, 'wb')
         f.write(img)
         f.close()
 
@@ -44,17 +50,15 @@ def main():
     websites = ((website[0], int(website[1]), int(website[2])) for website in websites)
     url_sets = ((website[0]+'page/'+str(i) for i in range(website[1], website[2]+1)) for website in websites)
     urls = (url for url_set in url_sets for url in url_set)
-    sem = asyncio.Semaphore(5)
+    sem = asyncio.Semaphore(50)
     loop = asyncio.get_event_loop()
     try:
-        f = asyncio.wait([print_image_data(url, sem) for url in urls])
-        loop.run_until_complete(f)
-        # loop.run_until_complete(wait_with_progress(f))
-    except IndexError as e:
-        print("configuration error !")
+        coros = [save_image_data(url, sem) for url in urls]
+        print('Pages Crawled : ')
+        loop.run_until_complete(wait_with_progress(coros))
+    except IndexError:
+        print("Configuration error !")
         return
-
-# distros = ['archlinux', 'ubuntu', 'debian']
 
 if __name__ == '__main__':
     main()
